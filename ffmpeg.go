@@ -134,7 +134,7 @@ func deviceArg(inputFormat, device string, ffmpegPath string) (string, error) {
 			case "dshow":
 				return "", fmt.Errorf("no camera found; run with --list and set \"device\" in config.json")
 			case "avfoundation":
-				return "0:none", nil
+				return "0", nil
 			default:
 				return "/dev/video0", nil
 			}
@@ -146,11 +146,11 @@ func deviceArg(inputFormat, device string, ffmpegPath string) (string, error) {
 	case "dshow":
 		return "video=" + device, nil
 	case "avfoundation":
-		// "<video>:<audio>"; we never want audio for a print cam.
-		if strings.Contains(device, ":") {
-			return device, nil
-		}
-		return device + ":none", nil
+		// Video device only (index or name). A "<video>:<audio>" form is passed
+		// through if the user supplied one; otherwise we capture video only and
+		// drop audio with -an on the output. (Appending ":none" makes some
+		// ffmpeg builds try to open an audio device called "none" and fail.)
+		return device, nil
 	default: // v4l2
 		return device, nil
 	}

@@ -124,8 +124,9 @@ func writePart(w http.ResponseWriter, boundary string, frame []byte) error {
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	cfg := a.config()
 	haveFrame, lastErr := false, "camera not running"
+	var recent []string
 	if cam := a.currentCam(); cam != nil {
-		haveFrame, lastErr = cam.Status()
+		haveFrame, lastErr, recent = cam.Status()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -134,6 +135,7 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"device":    cfg.Device,
 		"haveFrame": haveFrame,
 		"lastError": lastErr,
+		"log":       recent,
 	})
 }
 
@@ -241,6 +243,7 @@ func parseConfigForm(r *http.Request, current Config) Config {
 	c.RTSPTransport = strings.TrimSpace(formOr(r, "rtspTransport", c.RTSPTransport))
 	c.NetworkMode = strings.TrimSpace(formOr(r, "networkMode", c.NetworkMode))
 	c.SnapshotInterval = atoiOr(r.FormValue("snapshotInterval"), c.SnapshotInterval)
+	c.LogLevel = strings.TrimSpace(r.FormValue("logLevel"))
 	return c
 }
 
@@ -267,20 +270,32 @@ func firstHost(r *http.Request) string {
 }
 
 func (a *App) renderConfig(w http.ResponseWriter, cfg Config, ok, errMsg string) {
+	var haveFrame bool
+	var camErr string
+	var recent []string
+	if cam := a.currentCam(); cam != nil {
+		haveFrame, camErr, recent = cam.Status()
+	} else {
+		camErr = "camera not running"
+	}
 	data := struct {
-		Version       string
-		Cfg           Config
-		HasPassword   bool
-		OK            string
-		Err           string
-		StreamURL     string
-		SnapshotURL   string
+		Version     string
+		Cfg         Config
+		HasPassword bool
+		OK          string
+		Err         string
+		HaveFrame   bool
+		CamErr      string
+		Log         []string
 	}{
 		Version:     version,
 		Cfg:         cfg,
 		HasPassword: cfg.Password != "",
 		OK:          ok,
 		Err:         errMsg,
+		HaveFrame:   haveFrame,
+		CamErr:      camErr,
+		Log:         recent,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := configTmpl.Execute(w, data); err != nil {
@@ -304,6 +319,8 @@ var configTmpl = template.Must(template.New("config").Parse(`<!doctype html>
  .btn{margin-top:1.2rem;background:#1976d2;color:#fff;padding:.55rem 1rem;border:0;border-radius:.3rem;font-size:1rem;cursor:pointer}
  .ok{background:#e6f4ea;border:1px solid #34a853;padding:.5rem .7rem;border-radius:.3rem;margin:.5rem 0}
  .err{background:#fce8e6;border:1px solid #ea4335;padding:.5rem .7rem;border-radius:.3rem;margin:.5rem 0}
+ .diag{background:#fff8e1;border:1px solid #f9ab00;padding:.5rem .7rem;border-radius:.3rem;margin:.5rem 0}
+ pre{background:#111;color:#ddd;padding:.6rem;border-radius:.3rem;overflow:auto;font-size:.78rem;max-height:14rem}
  a{color:#1976d2}
 </style>
 </head>
@@ -312,6 +329,10 @@ var configTmpl = template.Must(template.New("config").Parse(`<!doctype html>
 <p><a href="/">&larr; back</a> &middot; <a href="/stream">preview</a></p>
 {{if .OK}}<div class="ok">{{.OK}}</div>{{end}}
 {{if .Err}}<div class="err">{{.Err}}</div>{{end}}
+{{if .HaveFrame}}<div class="ok">Camera is running — frames are flowing.</div>
+{{else}}<div class="diag"><strong>Camera not producing frames yet.</strong>{{if .CamErr}} Last error: {{.CamErr}}{{end}}
+{{if .Log}}<br>Recent capture output (set Log level to <code>verbose</code> for more):<pre>{{range .Log}}{{.}}
+{{end}}</pre>{{end}}</div>{{end}}
 <form method="post" action="/config">
   <h2>Camera source</h2>
   <label>Source
@@ -365,7 +386,16 @@ var configTmpl = template.Must(template.New("config").Parse(`<!doctype html>
     <div><label>Bind <span class="hint">0.0.0.0 = all</span>
       <input name="bind" value="{{.Cfg.Bind}}"></label></div>
   </div>
-  <label>Snapshot poll interval (ms)<input name="snapshotInterval" value="{{.Cfg.SnapshotInterval}}"></label>
+  <div class="row">
+    <div><label>Snapshot poll interval (ms)<input name="snapshotInterval" value="{{.Cfg.SnapshotInterval}}"></label></div>
+    <div><label>Log level <span class="hint">verbose = full diagnostics</span>
+      <select name="logLevel">
+        <option value=""{{if eq .Cfg.LogLevel ""}} selected{{end}}>normal (errors)</option>
+        <option value="warning"{{if eq .Cfg.LogLevel "warning"}} selected{{end}}>warning</option>
+        <option value="info"{{if eq .Cfg.LogLevel "info"}} selected{{end}}>info</option>
+        <option value="verbose"{{if eq .Cfg.LogLevel "verbose"}} selected{{end}}>verbose</option>
+      </select></label></div>
+  </div>
 
   <button class="btn" type="submit">Save &amp; apply</button>
 </form>

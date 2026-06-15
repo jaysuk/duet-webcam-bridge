@@ -72,6 +72,10 @@ type Config struct {
 	FFmpegPath string `json:"ffmpegPath"`
 	// RpicamPath overrides the rpicam-vid binary used for csi. Empty = PATH.
 	RpicamPath string `json:"rpicamPath"`
+	// LogLevel is ffmpeg's -loglevel. Default "error". Set "verbose" or "info"
+	// to see the full device negotiation when diagnosing a camera that won't
+	// start.
+	LogLevel string `json:"logLevel"`
 }
 
 func defaultConfig() Config {
@@ -135,6 +139,7 @@ func loadConfig(args []string) (Config, *flags, error) {
 	fs.IntVar(&cfg.Quality, "quality", cfg.Quality, "JPEG quality, ffmpeg -q:v (2 best .. 31 worst)")
 	fs.StringVar(&cfg.PixelFormat, "pixel-format", cfg.PixelFormat, "input pixel format override")
 	fs.StringVar(&cfg.InputFormat, "input-format", cfg.InputFormat, "override ffmpeg input format")
+	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "ffmpeg -loglevel (e.g. verbose) for diagnostics")
 	fs.StringVar(&cfg.FFmpegPath, "ffmpeg", cfg.FFmpegPath, "path to ffmpeg (empty = bundled/PATH)")
 	fs.BoolVar(&f.list, "list", false, "list available cameras and exit")
 	fs.BoolVar(&f.version, "version", false, "print version and exit")

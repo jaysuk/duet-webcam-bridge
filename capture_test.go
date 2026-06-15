@@ -127,7 +127,7 @@ func TestBuildNetworkURL_Invalid(t *testing.T) {
 	}
 }
 
-func TestPlanUSB_AVFoundation_NoInputSize(t *testing.T) {
+func TestPlanUSB_AVFoundation_LadderNoInputSize(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.InputFormat = "avfoundation"
 	cfg.Device = "0"
@@ -136,18 +136,41 @@ func TestPlanUSB_AVFoundation_NoInputSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if argsContainSeq(p.cmdArgs, "-video_size", "1280x720") {
-		t.Errorf("avfoundation must NOT pin input -video_size (causes negotiation failure): %v", p.cmdArgs)
+	if len(p.candidates) < 2 {
+		t.Fatalf("avfoundation should offer several fallback variants, got %d", len(p.candidates))
 	}
-	if !argsContainSeq(p.cmdArgs, "-vf", "scale=1280:720") {
-		t.Errorf("avfoundation should scale on output instead: %v", p.cmdArgs)
+	// The first variant is framerate-only and must scale on the output (never
+	// pin -video_size on the input - that's what broke real Macs).
+	v1 := p.candidates[0]
+	if argsContainSeq(v1, "-video_size", "1280x720") {
+		t.Errorf("variant 1 must NOT pin input -video_size: %v", v1)
 	}
-	if !argsContainSeq(p.cmdArgs, "-framerate", "15") {
-		t.Errorf("avfoundation should pin input framerate: %v", p.cmdArgs)
+	if !argsContainSeq(v1, "-vf", "scale=1280:720") {
+		t.Errorf("variant 1 should scale on output: %v", v1)
+	}
+	if !argsContainSeq(v1, "-framerate", "15") {
+		t.Errorf("variant 1 should pin input framerate: %v", v1)
+	}
+	// Somewhere in the ladder there should be a pixel_format fallback and a bare
+	// (no -framerate) fallback.
+	var hasPixFmt, hasBare bool
+	for _, v := range p.candidates {
+		if argsContains(v, "uyvy422") || argsContains(v, "nv12") {
+			hasPixFmt = true
+		}
+		if !argsContains(v, "-framerate") {
+			hasBare = true
+		}
+	}
+	if !hasPixFmt {
+		t.Error("ladder should include a pixel_format fallback")
+	}
+	if !hasBare {
+		t.Error("ladder should include a bare (no -framerate) fallback")
 	}
 }
 
-func TestPlanUSB_DShow_PinsSizeNotFramerateInput(t *testing.T) {
+func TestPlanUSB_DShow_SingleVariant(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.InputFormat = "dshow"
 	cfg.Device = "Some Camera"
@@ -156,18 +179,21 @@ func TestPlanUSB_DShow_PinsSizeNotFramerateInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !argsContainSeq(p.cmdArgs, "-video_size", "1280x720") {
-		t.Errorf("dshow should select hardware mode via input -video_size: %v", p.cmdArgs)
+	if len(p.candidates) != 1 {
+		t.Fatalf("dshow should have a single variant, got %d", len(p.candidates))
 	}
-	// -framerate must NOT appear as an input option (before -i) for dshow.
-	iIdx := indexOf(p.cmdArgs, "-i")
+	args := p.candidates[0]
+	if !argsContainSeq(args, "-video_size", "1280x720") {
+		t.Errorf("dshow should select hardware mode via input -video_size: %v", args)
+	}
+	iIdx := indexOf(args, "-i")
 	for i := 0; i < iIdx; i++ {
-		if p.cmdArgs[i] == "-framerate" {
-			t.Errorf("dshow must not pin input -framerate: %v", p.cmdArgs)
+		if args[i] == "-framerate" {
+			t.Errorf("dshow must not pin input -framerate: %v", args)
 		}
 	}
-	if !argsContains(p.cmdArgs, "video=Some Camera") {
-		t.Errorf("dshow device arg missing: %v", p.cmdArgs)
+	if !argsContains(args, "video=Some Camera") {
+		t.Errorf("dshow device arg missing: %v", args)
 	}
 }
 
@@ -181,16 +207,16 @@ func TestPlanNetwork_RedactsLogArgs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	full := strings.Join(p.cmdArgs, " ")
-	log := strings.Join(p.logArgs, " ")
+	full := strings.Join(p.candidates[0], " ")
+	logged := strings.Join(p.logCandidates[0], " ")
 	if !strings.Contains(full, "topsecret") {
-		t.Errorf("cmdArgs should carry the real password for ffmpeg: %v", p.cmdArgs)
+		t.Errorf("args should carry the real password for ffmpeg: %v", p.candidates[0])
 	}
-	if strings.Contains(log, "topsecret") {
-		t.Errorf("logArgs must redact the password: %v", p.logArgs)
+	if strings.Contains(logged, "topsecret") {
+		t.Errorf("log args must redact the password: %v", p.logCandidates[0])
 	}
-	if !argsContainSeq(p.cmdArgs, "-rtsp_transport", "tcp") {
-		t.Errorf("rtsp should default to tcp transport: %v", p.cmdArgs)
+	if !argsContainSeq(p.candidates[0], "-rtsp_transport", "tcp") {
+		t.Errorf("rtsp should default to tcp transport: %v", p.candidates[0])
 	}
 }
 
@@ -223,14 +249,15 @@ func TestPlanCSI_RpicamArgs(t *testing.T) {
 	if !p.rawMJPEG {
 		t.Error("CSI capture should use the raw-MJPEG parser")
 	}
-	if !argsContain(p.cmdArgs, "--codec", "mjpeg") {
-		t.Errorf("missing mjpeg codec: %v", p.cmdArgs)
+	args := p.candidates[0]
+	if !argsContain(args, "--codec", "mjpeg") {
+		t.Errorf("missing mjpeg codec: %v", args)
 	}
-	if !argsContainSeq(p.cmdArgs, "--width", "1280") || !argsContainSeq(p.cmdArgs, "--height", "720") {
-		t.Errorf("missing width/height: %v", p.cmdArgs)
+	if !argsContainSeq(args, "--width", "1280") || !argsContainSeq(args, "--height", "720") {
+		t.Errorf("missing width/height: %v", args)
 	}
-	if !argsContainSeq(p.cmdArgs, "--framerate", "20") {
-		t.Errorf("missing framerate: %v", p.cmdArgs)
+	if !argsContainSeq(args, "--framerate", "20") {
+		t.Errorf("missing framerate: %v", args)
 	}
 }
 
