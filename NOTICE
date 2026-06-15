@@ -1,0 +1,15 @@
+Duet Webcam Bridge bundles a prebuilt static build of FFmpeg in its release
+archives for convenience. FFmpeg is a separate work with its own license and is
+not covered by this project's MIT license.
+
+FFmpeg: https://ffmpeg.org/  (licensed under the GPL/LGPL)
+
+The bundled binaries come from these upstream static-build providers, which also
+publish the corresponding source code:
+  - Windows: https://www.gyan.dev/ffmpeg/builds/
+  - Linux (incl. Raspberry Pi): https://johnvansickle.com/ffmpeg/
+  - macOS:   https://evermeet.cx/ffmpeg/
+
+If you redistribute a release archive, you must comply with FFmpeg's license
+terms, including making the corresponding FFmpeg source available (the links
+above satisfy this for the bundled builds).

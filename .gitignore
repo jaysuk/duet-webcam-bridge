@@ -1,0 +1,17 @@
+# Build output
+/dist/
+/duet-webcam-bridge
+/duet-webcam-bridge.exe
+
+# Bundled/downloaded ffmpeg used for local testing
+/ffmpeg
+/ffmpeg.exe
+
+# Local config (ship config.example.json instead)
+/config.json
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.log
+duet-webcam-bridge.exe~

@@ -1,0 +1,49 @@
+Duet Webcam Bridge - Quick Start
+================================
+
+This shares a USB camera plugged into THIS computer so it shows up in Duet Web
+Control (DWC) on any device on your network. Nothing to install - ffmpeg is
+already bundled in this folder.
+
+1. START IT
+   - Windows: double-click  "Start Webcam Bridge.bat"
+   - macOS:   double-click  start.command
+              (if it won't open: right-click > Open the first time)
+   - Linux:   run  ./start.sh   in a terminal
+
+   A window opens and prints two web addresses, e.g.:
+       stream (live):   http://192.168.1.50:8081/stream
+       snapshot (poll): http://192.168.1.50:8081/snapshot
+
+2. CHECK IT
+   Open the /stream address in a web browser. You should see your camera.
+
+3. ADD IT TO DWC
+   In Duet Web Control:  Settings -> Webcam
+   - For live video (recommended):
+       URL = http://192.168.1.50:8081/stream     (use YOUR address)
+       Set "Update interval" to 0
+   - Or for a polled still image:
+       URL = http://192.168.1.50:8081/snapshot
+       Leave an update interval (e.g. 1000 ms)
+
+PICKING A CAMERA / CHANGING SETTINGS
+   Edit config.json in this folder (open with any text editor):
+     "device"      which camera (see below)
+     "resolution"  e.g. "1280x720"  (leave "" for default)
+     "framerate"   frames per second
+     "quality"     2 = best/larger ... 31 = worst/smaller
+     "port"        the port number (default 8081)
+
+   To find camera names:
+     - Windows: double-click "List Cameras.bat"
+     - macOS:   ./start.command --list   (in Terminal)
+     - Linux:   ./start.sh --list
+   Copy the camera's name/ID into "device", save, and restart.
+
+NOTES
+   - Keep this window/app running while you want the camera available.
+   - Leave DWC's "Store settings in this browser" OFF so the webcam URL
+     follows the machine and works from any PC.
+
+More help: https://github.com/jaysuk/duet-webcam-bridge

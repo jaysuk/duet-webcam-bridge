@@ -1,0 +1,94 @@
+name: Release
+
+# Cross-compiles the bridge for every supported platform, bundles a matching
+# static ffmpeg + the launcher scripts into a ready-to-run archive, and publishes
+# a GitHub Release with all of them attached. Just push a version tag:
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# You can also run it manually (Actions -> Release -> Run workflow) to build the
+# archives as artifacts without publishing a Release.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the Release and upload assets
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - windows-amd64
+          - linux-amd64
+          - linux-arm64
+          - linux-armhf
+          - macos-amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev+${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Package ${{ matrix.target }}
+        run: bash scripts/package.sh "${{ matrix.target }}" "${{ steps.ver.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    steps:
+      - name: Download all archives
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          generate_release_notes: true
+          body: |
+            Cross-platform USB-camera-to-DWC bridge. **ffmpeg is bundled** - nothing to install.
+
+            ### Which file do I download?
+            | Your computer | File |
+            | --- | --- |
+            | Windows PC | `*-windows-amd64.zip` |
+            | Mac (Intel or Apple Silicon) | `*-macos-amd64.tar.gz` |
+            | Linux PC | `*-linux-amd64.tar.gz` |
+            | Raspberry Pi (64-bit OS) | `*-linux-arm64.tar.gz` |
+            | Raspberry Pi (32-bit OS) | `*-linux-armhf.tar.gz` |
+
+            Unzip, run the launcher inside, then paste the printed `/stream` URL into
+            **DWC -> Settings -> Webcam** (set the update interval to 0 for live video).
+            See the bundled `QUICKSTART.txt` or the [README](https://github.com/jaysuk/duet-webcam-bridge#readme).
+          files: |
+            artifacts/*.zip
+            artifacts/*.tar.gz
+          fail_on_unmatched_files: true

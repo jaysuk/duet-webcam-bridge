@@ -1,0 +1,9 @@
+# Shell scripts must keep LF endings or they break on Linux/macOS
+# ("bad interpreter" / "\r" errors).
+*.sh        text eol=lf
+*.command   text eol=lf
+# Go sources normalise to LF too
+*.go        text eol=lf
+go.mod      text eol=lf
+# Windows batch files want CRLF
+*.bat       text eol=crlf
