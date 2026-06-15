@@ -242,7 +242,10 @@ func listAVFoundation(ffmpegPath string) ([]CameraInfo, error) {
 			continue
 		}
 		if m := avLine.FindStringSubmatch(line); m != nil {
-			cams = append(cams, CameraInfo{ID: m[1], Name: m[2]})
+			// Use the device NAME as the ID to put in config: avfoundation
+			// re-orders the numeric indices between runs, but matches the name
+			// reliably. ffmpeg accepts the name directly as the -i value.
+			cams = append(cams, CameraInfo{ID: m[2], Name: m[2]})
 		}
 	}
 	return cams, nil

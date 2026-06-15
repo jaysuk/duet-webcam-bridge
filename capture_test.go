@@ -139,9 +139,12 @@ func TestPlanUSB_AVFoundation_LadderNoInputSize(t *testing.T) {
 	if len(p.candidates) < 2 {
 		t.Fatalf("avfoundation should offer several fallback variants, got %d", len(p.candidates))
 	}
-	// The first variant is framerate-only and must scale on the output (never
-	// pin -video_size on the input - that's what broke real Macs).
+	// The first variant must lead with a real device pixel format (the actual
+	// fix), never pin -video_size on the input, and scale on the output instead.
 	v1 := p.candidates[0]
+	if !argsContainSeq(v1, "-pixel_format", "uyvy422") {
+		t.Errorf("variant 1 should lead with -pixel_format uyvy422: %v", v1)
+	}
 	if argsContainSeq(v1, "-video_size", "1280x720") {
 		t.Errorf("variant 1 must NOT pin input -video_size: %v", v1)
 	}
@@ -149,24 +152,36 @@ func TestPlanUSB_AVFoundation_LadderNoInputSize(t *testing.T) {
 		t.Errorf("variant 1 should scale on output: %v", v1)
 	}
 	if !argsContainSeq(v1, "-framerate", "15") {
-		t.Errorf("variant 1 should pin input framerate: %v", v1)
+		t.Errorf("variant 1 should pin the configured input framerate: %v", v1)
 	}
-	// Somewhere in the ladder there should be a pixel_format fallback and a bare
-	// (no -framerate) fallback.
-	var hasPixFmt, hasBare bool
+	// The ladder should also include an nv12 variant and a bare (no -framerate,
+	// no -pixel_format) last resort.
+	var hasNV12, hasBare bool
 	for _, v := range p.candidates {
-		if argsContains(v, "uyvy422") || argsContains(v, "nv12") {
-			hasPixFmt = true
+		if argsContains(v, "nv12") {
+			hasNV12 = true
 		}
-		if !argsContains(v, "-framerate") {
+		if !argsContains(v, "-framerate") && !argsContains(v, "-pixel_format") {
 			hasBare = true
 		}
 	}
-	if !hasPixFmt {
-		t.Error("ladder should include a pixel_format fallback")
+	if !hasNV12 {
+		t.Error("ladder should include an nv12 variant")
 	}
 	if !hasBare {
-		t.Error("ladder should include a bare (no -framerate) fallback")
+		t.Error("ladder should include a bare last-resort variant")
+	}
+}
+
+func TestUSBInputVariants_ExplicitPixelFormatSingleTry(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.PixelFormat = "yuyv422"
+	vs := usbInputVariants(cfg, "avfoundation", "FaceTime HD Camera")
+	if len(vs) != 1 {
+		t.Fatalf("explicit pixelFormat should give a single variant, got %d", len(vs))
+	}
+	if !argsContainSeq(vs[0], "-pixel_format", "yuyv422") {
+		t.Errorf("should honour the user pixel format: %v", vs[0])
 	}
 }
 

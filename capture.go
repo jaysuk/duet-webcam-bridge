@@ -152,33 +152,40 @@ func usbInputVariants(cfg Config, inputFmt, dev string) [][]string {
 		fr = strconv.Itoa(cfg.Framerate)
 	}
 	tail := []string{"-f", "avfoundation", "-i", dev}
-
-	// If the user explicitly set a pixel format, honour it exactly (single try).
-	if cfg.PixelFormat != "" {
-		in := []string{}
-		if fr != "" {
-			in = append(in, "-framerate", fr)
+	frArgs := func(f string) []string {
+		if f == "" {
+			return nil
 		}
-		if cfg.Resolution != "" {
-			in = append(in, "-video_size", cfg.Resolution)
-		}
-		in = append(in, "-pixel_format", cfg.PixelFormat)
-		return [][]string{append(in, tail...)}
+		return []string{"-framerate", f}
 	}
 
 	var variants [][]string
 	add := func(parts ...string) { variants = append(variants, append(parts, tail...)) }
 
-	if fr != "" {
-		add("-framerate", fr) // 1: framerate only
-		if cfg.Resolution != "" {
-			add("-framerate", fr, "-video_size", cfg.Resolution) // 2: pin exact mode
-		}
-		add("-framerate", fr, "-pixel_format", "uyvy422") // 3
-		add("-framerate", fr, "-pixel_format", "nv12")    // 4
+	// If the user explicitly set a pixel format, honour it exactly (single try).
+	if cfg.PixelFormat != "" {
+		add(append(frArgs(fr), "-pixel_format", cfg.PixelFormat)...)
+		return variants
 	}
-	add("-framerate", "30") // 5: many Apple cams expose exactly 15/30
-	add()                   // 6: bare - let ffmpeg/the device decide
+
+	// Mac cameras typically DON'T offer ffmpeg's default yuv420p - they offer
+	// uyvy422 / nv12 / yuyv422. Specifying the wrong (or no) pixel format makes
+	// ffmpeg bail with "Selected pixel format ... is not supported" (and the
+	// adjacent "framerate not supported" error is often the same root cause). So
+	// we lead with the real device pixel formats, then vary the framerate, and
+	// only fall back to letting ffmpeg choose as a last resort.
+	pixfmts := []string{"uyvy422", "nv12", "yuyv422"}
+	for _, pf := range pixfmts { // configured framerate + supported pixfmt
+		add(append(frArgs(fr), "-pixel_format", pf)...)
+	}
+	if fr != "30" { // some cameras only do exactly 15/30
+		add("-framerate", "30", "-pixel_format", "uyvy422")
+		add("-framerate", "30", "-pixel_format", "nv12")
+	}
+	add("-pixel_format", "uyvy422") // no framerate at all
+	add("-pixel_format", "nv12")
+	add(frArgs(fr)...) // no pixel format (camera that does support the default)
+	add()              // bare
 	return variants
 }
 
@@ -280,8 +287,10 @@ func (c *Camera) Run(ctx context.Context) {
 		return
 	}
 
+	n := len(c.plan.candidates)
 	idx := 0
-	backoff := time.Second
+	delay := time.Second
+	frameless := 0
 	for ctx.Err() == nil {
 		c.setVariant(idx)
 		before := c.frames.Load()
@@ -290,20 +299,25 @@ func (c *Camera) Run(ctx context.Context) {
 			return
 		}
 		c.setError(err)
-		gotFrames := c.frames.Load() > before
 
-		n := len(c.plan.candidates)
-		if gotFrames {
-			backoff = time.Second // healthy; stick with this variant
-		} else if n > 1 {
-			idx = (idx + 1) % n
-			log.Printf("no frames with these camera settings; trying alternative %d/%d", idx+1, n)
+		if c.frames.Load() > before {
+			// Healthy: keep this variant and reset the probing state.
+			frameless = 0
+			delay = time.Second
+		} else {
+			frameless++
+			if n > 1 {
+				idx = (idx + 1) % n
+				log.Printf("no frames with these camera settings; trying alternative %d/%d", idx+1, n)
+			}
+			// Probe candidates quickly; only start backing off once we've cycled
+			// through them all without success, to avoid hammering a dead source.
+			if frameless >= 2*n && delay < 15*time.Second {
+				delay *= 2
+			}
 		}
-		if sleepCtx(ctx, backoff) {
+		if sleepCtx(ctx, delay) {
 			return
-		}
-		if backoff < 15*time.Second {
-			backoff *= 2
 		}
 	}
 }

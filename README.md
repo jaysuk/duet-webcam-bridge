@@ -83,10 +83,11 @@ Auto-picks the first camera, or set `"device"`:
 
 Put the listed name/ID into `device`, save, and restart.
 
-> **macOS note:** the device list is numbered (`0`, `1`, …). Index `0` is often a
-> nearby iPhone (Continuity Camera), which can be flaky — pick your built-in or
-> USB camera's index instead. If the image won't start, try a `"pixelFormat"` of
-> `"nv12"` or leave `"resolution"` blank.
+> **macOS note:** select the camera by its **name** (e.g. `"FaceTime HD Camera"`),
+> not a number — macOS re-orders the device indices between runs. The bridge
+> automatically tries the pixel formats Mac cameras actually use
+> (`uyvy422`/`nv12`/…), so it should start on its own; if it doesn't, open
+> `/config`, set **Log level → verbose**, and check the on-page diagnostics.
 
 ### Network / IP cameras
 
