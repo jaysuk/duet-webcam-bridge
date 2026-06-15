@@ -28,8 +28,10 @@ jobs:
           - windows-amd64
           - linux-amd64
           - linux-arm64
-          - linux-armhf
           - macos-amd64
+          # linux-armhf (32-bit Pi) is supported by the scripts but not
+          # pre-built: johnvansickle's armhf static build returns HTTP 415 to
+          # GitHub's runners. 64-bit Pi OS users use linux-arm64.
     steps:
       - uses: actions/checkout@v4
 
@@ -83,7 +85,6 @@ jobs:
             | Mac (Intel or Apple Silicon) | `*-macos-amd64.tar.gz` |
             | Linux PC | `*-linux-amd64.tar.gz` |
             | Raspberry Pi (64-bit OS) | `*-linux-arm64.tar.gz` |
-            | Raspberry Pi (32-bit OS) | `*-linux-armhf.tar.gz` |
 
             Unzip, run the launcher inside, then paste the printed `/stream` URL into
             **DWC -> Settings -> Webcam** (set the update interval to 0 for live video).

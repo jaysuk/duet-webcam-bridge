@@ -24,7 +24,8 @@ for capture, so the same tool works on **Windows, macOS, Linux and Raspberry Pi*
    | Mac (Intel or Apple Silicon) | `*-macos-amd64.tar.gz` |
    | Linux PC | `*-linux-amd64.tar.gz` |
    | Raspberry Pi (64-bit OS) | `*-linux-arm64.tar.gz` |
-   | Raspberry Pi (32-bit OS) | `*-linux-armhf.tar.gz` |
+
+   (32-bit Pi OS isn't pre-built yet — see [building from source](#building-from-source).)
 
 2. Unzip it and start the bridge:
    - **Windows:** double-click `Start Webcam Bridge.bat`
