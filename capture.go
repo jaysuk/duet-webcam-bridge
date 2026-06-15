@@ -56,11 +56,21 @@ func NewCamera(cfg Config, ffmpegPath string) (*Camera, error) {
 func (c *Camera) ffmpegArgs() []string {
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin"}
 
-	// Input options must come *before* -i. We only set a resolution when the
-	// user asked for one: forcing a mode the camera doesn't expose makes the
-	// capture backends (dshow especially) bail out with "could not set video
-	// options". Framerate is shaped on the output side instead, for the same
-	// reason. The resolution must be a mode the camera actually supports.
+	// Input options must come *before* -i.
+	//
+	// Framerate is platform-specific. macOS avfoundation defaults to ~29.97 fps
+	// and outright *rejects* capture unless the requested input framerate is one
+	// the device advertises (typically exactly 15 or 30), so we must pin it on
+	// the input there. Windows dshow is the opposite - pinning the input
+	// framerate makes it bail with "could not set video options" - so for dshow
+	// (and by default v4l2) we leave the input alone and shape the rate on the
+	// output with -r instead.
+	if c.inputFmt == "avfoundation" && c.cfg.Framerate > 0 {
+		args = append(args, "-framerate", strconv.Itoa(c.cfg.Framerate))
+	}
+	// Only set a resolution when the user asked for one: forcing a mode the
+	// camera doesn't expose makes the capture backends bail out. It must be a
+	// mode the camera actually supports.
 	if c.cfg.Resolution != "" {
 		args = append(args, "-video_size", c.cfg.Resolution)
 	}
