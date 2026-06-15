@@ -41,7 +41,12 @@ esac
 
 echo "Downloading ffmpeg for $target"
 echo "  $url"
-curl -fsSL --retry 3 -o "$archive" "$url"
+# Explicit Accept/identity headers avoid an Apache content-negotiation quirk that
+# can return 415 on some johnvansickle variants; retry-all-errors rides out the
+# occasional transient hiccup.
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+  -H 'Accept: */*' -H 'Accept-Encoding: identity' \
+  -o "$archive" "$url"
 
 echo "Extracting"
 case "$archive" in
