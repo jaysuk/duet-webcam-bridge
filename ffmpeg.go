@@ -4,11 +4,14 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,6 +34,81 @@ func findFFmpeg(override string) (string, error) {
 		return p, nil
 	}
 	return "", fmt.Errorf("ffmpeg not found next to the program or on PATH")
+}
+
+// findRpicam locates rpicam-vid (or the older libcamera-vid) for CSI capture.
+// Returns "" if neither is present; only meaningful on Linux/Raspberry Pi.
+func findRpicam(override string) string {
+	if override != "" {
+		return override
+	}
+	for _, name := range []string{"rpicam-vid", "libcamera-vid"} {
+		if p, err := exec.LookPath(name); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// buildNetworkURL applies optional credentials to an IP-camera URL and returns
+// both the full URL (for ffmpeg) and a redacted one (for logs/banner) with the
+// password stripped, so secrets never reach the console or log file.
+func buildNetworkURL(rawURL, user, pass string) (full, redacted string, err error) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", "", fmt.Errorf("invalid url %q: %w", rawURL, err)
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "", "", fmt.Errorf("url %q must include a scheme and host (e.g. rtsp://host/stream)", rawURL)
+	}
+	if user != "" {
+		u.User = url.UserPassword(user, pass)
+	}
+	full = u.String()
+
+	r := *u
+	if r.User != nil {
+		r.User = url.User(r.User.Username()) // keep username, drop password
+	}
+	redacted = r.String()
+	return full, redacted, nil
+}
+
+// splitResolution parses "1280x720" into its parts. Returns ok=false if empty
+// or malformed.
+func splitResolution(res string) (w, h int, ok bool) {
+	res = strings.TrimSpace(res)
+	if res == "" {
+		return 0, 0, false
+	}
+	parts := strings.FieldsFunc(res, func(r rune) bool { return r == 'x' || r == 'X' })
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	w, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	h, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil || w <= 0 || h <= 0 {
+		return 0, 0, false
+	}
+	return w, h, true
+}
+
+// baseName is filepath.Base, used for tidy log prefixes ("ffmpeg", "rpicam-vid").
+func baseName(p string) string {
+	return strings.TrimSuffix(filepath.Base(p), ".exe")
+}
+
+// listCSICameras prints the Pi CSI cameras rpicam-vid can see.
+func listCSICameras(rpicamPath string) {
+	if rpicamPath == "" {
+		fmt.Fprintln(os.Stderr, "rpicam-vid not found; install rpicam-apps (Raspberry Pi OS).")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, _ := exec.CommandContext(ctx, rpicamPath, "--list-cameras").CombinedOutput()
+	fmt.Print(string(out))
+	fmt.Println("\nSet the camera index as \"device\" in config.json (e.g. \"device\": \"0\").")
 }
 
 // defaultInputFormat is the ffmpeg capture demuxer for the current OS.

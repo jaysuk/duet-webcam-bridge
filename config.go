@@ -21,34 +21,68 @@ type Config struct {
 	// Port to serve on. 8081 matches the Duet SBC webcam default.
 	Port int `json:"port"`
 
-	// Device is the camera to capture from. Leave empty to auto-pick the first
-	// one found. On Windows this is the DirectShow device *name* (run with
-	// --list to see them); on Linux a /dev/videoN path; on macOS an AVFoundation
-	// device index ("0", "1", ...) or name.
+	// Source selects where the video comes from:
+	//   "usb"     a USB / built-in camera on this machine (default)
+	//   "csi"     a Raspberry Pi CSI ribbon-cable camera (via rpicam-vid)
+	//   "network" an IP camera reached over the network (RTSP/HTTP, via ffmpeg)
+	Source string `json:"source"`
+
+	// --- usb / csi device selection ---
+	// Device is the camera to capture from. Leave empty to auto-pick the first.
+	// usb: Windows DirectShow name / macOS AVFoundation index / Linux /dev/videoN.
+	// csi: the rpicam camera index ("0", "1", ...).
 	Device string `json:"device"`
 
-	// Resolution like "1280x720". Empty = let the camera/ffmpeg decide.
-	Resolution string `json:"resolution"`
-	// Framerate to request from the camera and emit. 0 = ffmpeg default.
-	Framerate int `json:"framerate"`
-	// Quality is ffmpeg's -q:v (2 = best/large ... 31 = worst/small). 5 is a
-	// good middle ground for a print webcam.
-	Quality int `json:"quality"`
+	// --- network (IP camera) settings ---
+	// URL is the camera stream/snapshot URL, e.g. rtsp://host:554/stream or
+	// http://host/snapshot.jpg. Credentials may be embedded here, or supplied
+	// separately via Username/Password (kept out of the URL/logs).
+	URL string `json:"url"`
+	// Username / Password for the network camera (HTTP basic/digest or RTSP).
+	Username string `json:"username"`
+	Password string `json:"password"`
+	// RTSPTransport is "tcp" (default, reliable) or "udp".
+	RTSPTransport string `json:"rtspTransport"`
+	// NetworkMode is "stream" (default: transcode a live stream to MJPEG) or
+	// "snapshot" (poll a single-JPEG URL and re-serve it, no transcoding).
+	NetworkMode string `json:"networkMode"`
+	// SnapshotInterval is the poll period in ms for NetworkMode "snapshot".
+	SnapshotInterval int `json:"snapshotInterval"`
 
-	// InputFormat overrides the auto-detected ffmpeg input demuxer
+	// --- common capture options ---
+	// Resolution like "1280x720". Empty = native. For usb on Windows/Linux this
+	// selects the camera's hardware mode; on macOS and for network/csi it scales
+	// the output (so any value is safe).
+	Resolution string `json:"resolution"`
+	// Framerate to emit. 0 = source default.
+	Framerate int `json:"framerate"`
+	// Quality is ffmpeg's -q:v (2 = best/large ... 31 = worst/small).
+	Quality int `json:"quality"`
+	// PixelFormat overrides the capture input pixel format (advanced; e.g.
+	// "nv12"/"uyvy422" can help fussy macOS cameras). Empty = let ffmpeg decide.
+	PixelFormat string `json:"pixelFormat"`
+
+	// --- advanced / overrides ---
+	// InputFormat overrides the auto-detected ffmpeg input demuxer for usb
 	// (dshow / v4l2 / avfoundation). Leave empty unless you know you need it.
 	InputFormat string `json:"inputFormat"`
-	// FFmpegPath overrides the bundled ffmpeg. Empty = use the ffmpeg sitting
-	// next to this executable, falling back to one on PATH.
+	// FFmpegPath overrides the bundled ffmpeg. Empty = ffmpeg next to this
+	// executable, falling back to PATH.
 	FFmpegPath string `json:"ffmpegPath"`
+	// RpicamPath overrides the rpicam-vid binary used for csi. Empty = PATH.
+	RpicamPath string `json:"rpicamPath"`
 }
 
 func defaultConfig() Config {
 	return Config{
-		Bind:      "0.0.0.0",
-		Port:      8081,
-		Framerate: 15,
-		Quality:   5,
+		Bind:             "0.0.0.0",
+		Port:             8081,
+		Source:           "usb",
+		RTSPTransport:    "tcp",
+		NetworkMode:      "stream",
+		SnapshotInterval: 1000,
+		Framerate:        15,
+		Quality:          5,
 	}
 }
 
@@ -89,14 +123,22 @@ func loadConfig(args []string) (Config, *flags, error) {
 	f := &flags{}
 	fs.StringVar(&cfg.Bind, "bind", cfg.Bind, "interface to listen on (0.0.0.0 = all)")
 	fs.IntVar(&cfg.Port, "port", cfg.Port, "port to serve on")
+	fs.StringVar(&cfg.Source, "source", cfg.Source, "video source: usb | csi | network")
 	fs.StringVar(&cfg.Device, "device", cfg.Device, "camera device (empty = auto; see --list)")
+	fs.StringVar(&cfg.URL, "url", cfg.URL, "network camera URL (rtsp/http)")
+	fs.StringVar(&cfg.Username, "username", cfg.Username, "network camera username")
+	fs.StringVar(&cfg.Password, "password", cfg.Password, "network camera password")
+	fs.StringVar(&cfg.NetworkMode, "network-mode", cfg.NetworkMode, "network camera mode: stream | snapshot")
 	fs.StringVar(&cfg.Resolution, "resolution", cfg.Resolution, "capture resolution e.g. 1280x720")
 	fs.IntVar(&cfg.Framerate, "framerate", cfg.Framerate, "frames per second")
 	fs.IntVar(&cfg.Quality, "quality", cfg.Quality, "JPEG quality, ffmpeg -q:v (2 best .. 31 worst)")
+	fs.StringVar(&cfg.PixelFormat, "pixel-format", cfg.PixelFormat, "input pixel format override")
 	fs.StringVar(&cfg.InputFormat, "input-format", cfg.InputFormat, "override ffmpeg input format")
 	fs.StringVar(&cfg.FFmpegPath, "ffmpeg", cfg.FFmpegPath, "path to ffmpeg (empty = bundled/PATH)")
 	fs.BoolVar(&f.list, "list", false, "list available cameras and exit")
 	fs.BoolVar(&f.version, "version", false, "print version and exit")
+	fs.BoolVar(&f.installAutostart, "install-autostart", false, "start automatically at boot/login and exit")
+	fs.BoolVar(&f.uninstallAutostart, "uninstall-autostart", false, "remove autostart and exit")
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, nil, err
@@ -106,6 +148,8 @@ func loadConfig(args []string) (Config, *flags, error) {
 
 // flags are one-shot command-line actions that aren't part of Config.
 type flags struct {
-	list    bool
-	version bool
+	list               bool
+	version            bool
+	installAutostart   bool
+	uninstallAutostart bool
 }

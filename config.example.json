@@ -1,8 +1,20 @@
 {
   "bind": "0.0.0.0",
   "port": 8081,
+
+  "source": "usb",
+
   "device": "",
   "resolution": "1280x720",
   "framerate": 15,
-  "quality": 5
+  "quality": 5,
+
+  "url": "",
+  "username": "",
+  "password": "",
+  "rtspTransport": "tcp",
+  "networkMode": "stream",
+  "snapshotInterval": 1000,
+
+  "pixelFormat": ""
 }

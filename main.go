@@ -1,10 +1,11 @@
-// Command duet-webcam-bridge publishes a locally-connected USB camera over HTTP
-// as both a single JPEG (/snapshot) and a live MJPEG stream (/stream), so it can
-// be shown in Duet Web Control's webcam panel from any machine on the network.
+// Command duet-webcam-bridge publishes a camera over HTTP as both a single JPEG
+// (/snapshot) and a live MJPEG stream (/stream), so it can be shown in Duet Web
+// Control's webcam panel from any machine on the network.
 //
-// It drives a bundled ffmpeg for the actual capture, which keeps the program a
-// single tiny static binary while supporting USB cameras on Windows, Linux and
-// macOS.
+// The camera can be a local USB/built-in camera (default), a Raspberry Pi CSI
+// camera (via rpicam-vid), or a network/IP camera (RTSP/HTTP, transcoded by the
+// bundled ffmpeg). USB/network capture uses a bundled ffmpeg, which keeps the
+// program a single tiny static binary that works on Windows, Linux and macOS.
 package main
 
 import (
@@ -16,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -25,7 +27,6 @@ func main() {
 
 	cfg, f, err := loadConfig(os.Args[1:])
 	if err != nil {
-		// flag.ContinueOnError already printed usage for parse errors.
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
@@ -35,19 +36,31 @@ func main() {
 		return
 	}
 
-	ffmpegPath, err := findFFmpeg(cfg.FFmpegPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		fmt.Fprintln(os.Stderr, "Make sure ffmpeg(.exe) sits next to this program (it ships in the release) or is on your PATH.")
-		os.Exit(1)
-	}
-
-	if f.list {
-		printCameras(ffmpegPath)
+	if f.installAutostart || f.uninstallAutostart {
+		runAutostart(f.installAutostart)
 		return
 	}
 
-	cam, err := NewCamera(cfg, ffmpegPath)
+	// ffmpeg is needed for usb + network sources; rpicam-vid for csi.
+	source := strings.ToLower(cfg.Source)
+	var ffmpegPath, rpicamPath string
+	if source == "csi" || source == "libcamera" || source == "rpicam" {
+		rpicamPath = findRpicam(cfg.RpicamPath)
+	} else {
+		ffmpegPath, err = findFFmpeg(cfg.FFmpegPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			fmt.Fprintln(os.Stderr, "Make sure ffmpeg(.exe) sits next to this program (it ships in the release) or is on your PATH.")
+			os.Exit(1)
+		}
+	}
+
+	if f.list {
+		printCameras(cfg, ffmpegPath, rpicamPath)
+		return
+	}
+
+	cam, err := NewCamera(cfg, ffmpegPath, rpicamPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -64,7 +77,7 @@ func main() {
 		Handler: NewServer(cam, cfg).Handler(),
 	}
 
-	printBanner(cfg, ffmpegPath)
+	printBanner(cfg, cam, ffmpegPath)
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -79,27 +92,25 @@ func main() {
 	_ = srv.Shutdown(shutdownCtx)
 }
 
-func printBanner(cfg Config, ffmpegPath string) {
+func printBanner(cfg Config, cam *Camera, ffmpegPath string) {
 	fmt.Println()
 	fmt.Printf("  Duet Webcam Bridge %s\n", version)
-	if v := probeFFmpegVersion(ffmpegPath); v != "" {
-		fmt.Printf("  using %s\n", v)
+	if ffmpegPath != "" {
+		if v := probeFFmpegVersion(ffmpegPath); v != "" {
+			fmt.Printf("  using %s\n", v)
+		}
 	}
-	dev := cfg.Device
-	if dev == "" {
-		dev = "(auto)"
-	}
-	fmt.Printf("  camera: %s\n", dev)
+	fmt.Printf("  source: %s\n", cam.Description())
 	fmt.Println()
 
 	port := strconv.Itoa(cfg.Port)
 	ips := lanIPs()
-	fmt.Println("  Open this in a browser to check it works, then paste a URL into")
-	fmt.Println("  DWC -> Settings -> Webcam:")
-	fmt.Println()
 	if len(ips) == 0 {
 		ips = []string{"localhost"}
 	}
+	fmt.Println("  Open this in a browser to check it works, then paste a URL into")
+	fmt.Println("  DWC -> Settings -> Webcam:")
+	fmt.Println()
 	for _, ip := range ips {
 		base := "http://" + net.JoinHostPort(ip, port)
 		fmt.Printf("    stream (live):   %s/stream      (DWC update interval = 0)\n", base)
