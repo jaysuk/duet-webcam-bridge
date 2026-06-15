@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Config holds every tunable. Values are resolved in this order (later wins):
@@ -144,6 +145,45 @@ func loadConfig(args []string) (Config, *flags, error) {
 		return cfg, nil, err
 	}
 	return cfg, f, nil
+}
+
+// validateConfig checks a config before it is persisted/applied, returning a
+// friendly error for the /config page.
+func validateConfig(cfg Config) error {
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535")
+	}
+	switch strings.ToLower(cfg.Source) {
+	case "", "usb", "auto", "csi", "libcamera", "rpicam":
+		// ok
+	case "network", "ip":
+		if strings.TrimSpace(cfg.URL) == "" {
+			return fmt.Errorf("a network camera needs a URL (e.g. rtsp://camera/stream)")
+		}
+		if _, _, err := buildNetworkURL(cfg.URL, cfg.Username, cfg.Password); err != nil {
+			return err
+		}
+		if m := strings.ToLower(cfg.NetworkMode); m != "" && m != "stream" && m != "snapshot" {
+			return fmt.Errorf("networkMode must be \"stream\" or \"snapshot\"")
+		}
+	default:
+		return fmt.Errorf("source must be usb, network or csi")
+	}
+	if cfg.Resolution != "" {
+		if _, _, ok := splitResolution(cfg.Resolution); !ok {
+			return fmt.Errorf("resolution must look like 1280x720")
+		}
+	}
+	if cfg.Framerate < 0 || cfg.Framerate > 240 {
+		return fmt.Errorf("framerate must be between 0 and 240")
+	}
+	if cfg.Quality != 0 && (cfg.Quality < 1 || cfg.Quality > 31) {
+		return fmt.Errorf("quality must be between 1 (best) and 31 (worst)")
+	}
+	if cfg.SnapshotInterval < 0 {
+		return fmt.Errorf("snapshotInterval cannot be negative")
+	}
+	return nil
 }
 
 // flags are one-shot command-line actions that aren't part of Config.

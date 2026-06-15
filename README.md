@@ -52,9 +52,21 @@ Linux and Raspberry Pi**.
 > Tip: leave DWC's **Settings → General → "Store settings in this browser"**
 > **off** so the webcam URL is saved on the machine and works from every PC.
 
+## Settings page (no config-file editing needed)
+
+Open **`http://<this-pc>:8081/config`** in a browser (there's a **Settings** link
+on the bridge's home page). It's a simple form for every option — camera source,
+device, resolution, network camera URL/credentials, port, etc. **Save & apply**
+writes `config.json` and reloads the camera **live**, no restart required; if you
+change the port it even moves itself to the new address. Stored passwords are
+never shown back on the page.
+
+Editing `config.json` by hand still works too — the keys are below.
+
 ## Camera sources
 
-Set `"source"` in `config.json` (or `--source`) to one of:
+Set the source on the settings page, or `"source"` in `config.json` (or
+`--source`), to one of:
 
 | `source` | Camera | Notes |
 | --- | --- | --- |

@@ -13,13 +13,10 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
-	"time"
 )
 
 func main() {
@@ -41,84 +38,27 @@ func main() {
 		return
 	}
 
-	// ffmpeg is needed for usb + network sources; rpicam-vid for csi.
-	source := strings.ToLower(cfg.Source)
-	var ffmpegPath, rpicamPath string
-	if source == "csi" || source == "libcamera" || source == "rpicam" {
-		rpicamPath = findRpicam(cfg.RpicamPath)
-	} else {
-		ffmpegPath, err = findFFmpeg(cfg.FFmpegPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			fmt.Fprintln(os.Stderr, "Make sure ffmpeg(.exe) sits next to this program (it ships in the release) or is on your PATH.")
-			os.Exit(1)
-		}
-	}
+	// Resolve both capture tools best-effort so the source can be switched live
+	// from /config without a restart. A missing tool only matters once a source
+	// that needs it is actually selected (surfaced via the camera's error).
+	ffmpegPath, _ := findFFmpeg(cfg.FFmpegPath)
+	rpicamPath := findRpicam(cfg.RpicamPath)
 
 	if f.list {
+		if ffmpegPath == "" && !strings.EqualFold(cfg.Source, "csi") {
+			fmt.Fprintln(os.Stderr, "ffmpeg not found next to the program or on PATH.")
+			os.Exit(1)
+		}
 		printCameras(cfg, ffmpegPath, rpicamPath)
 		return
-	}
-
-	cam, err := NewCamera(cfg, ffmpegPath, rpicamPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	go cam.Run(ctx)
-
-	addr := net.JoinHostPort(cfg.Bind, strconv.Itoa(cfg.Port))
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: NewServer(cam, cfg).Handler(),
-	}
-
-	printBanner(cfg, cam, ffmpegPath)
-
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("http server: %v", err)
-		}
-	}()
-
-	<-ctx.Done()
+	app := NewApp(cfg, ffmpegPath, rpicamPath)
+	app.Run(ctx)
 	log.Println("shutting down...")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
-}
-
-func printBanner(cfg Config, cam *Camera, ffmpegPath string) {
-	fmt.Println()
-	fmt.Printf("  Duet Webcam Bridge %s\n", version)
-	if ffmpegPath != "" {
-		if v := probeFFmpegVersion(ffmpegPath); v != "" {
-			fmt.Printf("  using %s\n", v)
-		}
-	}
-	fmt.Printf("  source: %s\n", cam.Description())
-	fmt.Println()
-
-	port := strconv.Itoa(cfg.Port)
-	ips := lanIPs()
-	if len(ips) == 0 {
-		ips = []string{"localhost"}
-	}
-	fmt.Println("  Open this in a browser to check it works, then paste a URL into")
-	fmt.Println("  DWC -> Settings -> Webcam:")
-	fmt.Println()
-	for _, ip := range ips {
-		base := "http://" + net.JoinHostPort(ip, port)
-		fmt.Printf("    stream (live):   %s/stream      (DWC update interval = 0)\n", base)
-		fmt.Printf("    snapshot (poll): %s/snapshot\n", base)
-		fmt.Println()
-	}
-	fmt.Println("  Press Ctrl+C to stop.")
-	fmt.Println()
 }
 
 // lanIPs returns the machine's non-loopback IPv4 addresses, so the banner can

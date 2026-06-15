@@ -27,8 +27,14 @@ already bundled in this folder.
        URL = http://192.168.1.50:8081/snapshot
        Leave an update interval (e.g. 1000 ms)
 
-PICKING A CAMERA / CHANGING SETTINGS
-   Edit config.json in this folder (open with any text editor):
+CHANGE SETTINGS IN YOUR BROWSER (easiest)
+   Open the settings page shown in the window, e.g.
+       http://192.168.1.50:8081/config
+   Pick the camera, resolution, etc., and click "Save & apply". Changes take
+   effect immediately - no restart, no file editing.
+
+PICKING A CAMERA / CHANGING SETTINGS BY HAND
+   Or edit config.json in this folder (open with any text editor):
      "source"      "usb" (default), "network" (IP camera) or "csi" (Pi camera)
      "device"      which camera (see below)
      "resolution"  e.g. "1280x720"  (leave "" for default)

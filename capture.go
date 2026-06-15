@@ -31,6 +31,8 @@ type Camera struct {
 
 	subsMu sync.Mutex
 	subs   map[chan []byte]struct{}
+
+	done chan struct{} // closed when Run returns (camera retired)
 }
 
 // capturePlan is the resolved "how to get frames" decision, built once up front.
@@ -59,6 +61,7 @@ func NewCamera(cfg Config, ffmpegPath, rpicamPath string) (*Camera, error) {
 		cfg:  cfg,
 		plan: plan,
 		subs: make(map[chan []byte]struct{}),
+		done: make(chan struct{}),
 	}, nil
 }
 
@@ -220,8 +223,9 @@ func encodeArgs(cfg Config, scaleOutput bool) []string {
 }
 
 // Run keeps the capture source alive until ctx is cancelled, restarting on
-// failure with a backoff.
+// failure with a backoff. Done() is closed when it returns.
 func (c *Camera) Run(ctx context.Context) {
+	defer close(c.done)
 	if c.plan.poll {
 		c.runPoller(ctx)
 		return
@@ -475,6 +479,10 @@ func (c *Camera) Unsubscribe(ch chan []byte) {
 
 // Description is a human-readable label for the active capture source.
 func (c *Camera) Description() string { return c.plan.description }
+
+// Done is closed once the camera has been retired (its context cancelled), so
+// stream handlers can stop instead of blocking on a camera that's been replaced.
+func (c *Camera) Done() <-chan struct{} { return c.done }
 
 // printCameras lists discovered cameras to stdout for the --list flag.
 func printCameras(cfg Config, ffmpegPath, rpicamPath string) {
