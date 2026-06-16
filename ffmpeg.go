@@ -98,6 +98,68 @@ func baseName(p string) string {
 	return strings.TrimSuffix(filepath.Base(p), ".exe")
 }
 
+func splitInts(s string) []string {
+	fields := strings.FieldsFunc(s, func(r rune) bool {
+		return r == 'x' || r == 'X' || r == ':' || r == ',' || r == ' '
+	})
+	return fields
+}
+
+// normalizeCrop validates a crop spec and returns the ffmpeg crop arguments
+// ("w:h" centred, or "w:h:x:y"). Empty input returns "".
+func normalizeCrop(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	parts := splitInts(s)
+	nums := make([]int, 0, len(parts))
+	for _, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return "", fmt.Errorf("crop must be numbers like w:h or w:h:x:y (got %q)", s)
+		}
+		nums = append(nums, n)
+	}
+	switch len(nums) {
+	case 2:
+		if nums[0] <= 0 || nums[1] <= 0 {
+			return "", fmt.Errorf("crop width and height must be positive")
+		}
+		return fmt.Sprintf("%d:%d", nums[0], nums[1]), nil
+	case 4:
+		if nums[0] <= 0 || nums[1] <= 0 || nums[2] < 0 || nums[3] < 0 {
+			return "", fmt.Errorf("crop w:h must be positive and x:y non-negative")
+		}
+		return fmt.Sprintf("%d:%d:%d:%d", nums[0], nums[1], nums[2], nums[3]), nil
+	default:
+		return "", fmt.Errorf("crop must be w:h or w:h:x:y (got %q)", s)
+	}
+}
+
+// normalizeScale validates a scale spec and returns ffmpeg scale arguments
+// ("w:h"). One axis may be -1 to preserve the aspect ratio. Empty returns "".
+func normalizeScale(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	parts := splitInts(s)
+	if len(parts) != 2 {
+		return "", fmt.Errorf("scale must look like 640x480 (or 640x-1) (got %q)", s)
+	}
+	w, err1 := strconv.Atoi(parts[0])
+	h, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return "", fmt.Errorf("scale must be numbers like 640x480 (got %q)", s)
+	}
+	valid := func(v int) bool { return v == -1 || v > 0 }
+	if !valid(w) || !valid(h) || (w == -1 && h == -1) {
+		return "", fmt.Errorf("scale values must be positive (or -1 on one axis to keep aspect)")
+	}
+	return fmt.Sprintf("%d:%d", w, h), nil
+}
+
 // listCSICameras prints the Pi CSI cameras rpicam-vid can see.
 func listCSICameras(rpicamPath string) {
 	if rpicamPath == "" {

@@ -173,6 +173,80 @@ func TestPlanUSB_AVFoundation_LadderNoInputSize(t *testing.T) {
 	}
 }
 
+func TestNormalizeCrop(t *testing.T) {
+	cases := []struct {
+		in, out string
+		ok      bool
+	}{
+		{"", "", true},
+		{"800:600", "800:600", true},
+		{"800x600", "800:600", true},
+		{"640:480:10:20", "640:480:10:20", true},
+		{"640,480,10,20", "640:480:10:20", true},
+		{"0:480", "", false},
+		{"640:480:10", "", false},
+		{"abc", "", false},
+	}
+	for _, c := range cases {
+		got, err := normalizeCrop(c.in)
+		if (err == nil) != c.ok || got != c.out {
+			t.Errorf("normalizeCrop(%q) = %q,%v want %q,ok=%v", c.in, got, err, c.out, c.ok)
+		}
+	}
+}
+
+func TestNormalizeScale(t *testing.T) {
+	cases := []struct {
+		in, out string
+		ok      bool
+	}{
+		{"", "", true},
+		{"640x480", "640:480", true},
+		{"640x-1", "640:-1", true},
+		{"-1x720", "-1:720", true},
+		{"-1x-1", "", false},
+		{"640", "", false},
+		{"foo", "", false},
+	}
+	for _, c := range cases {
+		got, err := normalizeScale(c.in)
+		if (err == nil) != c.ok || got != c.out {
+			t.Errorf("normalizeScale(%q) = %q,%v want %q,ok=%v", c.in, got, err, c.out, c.ok)
+		}
+	}
+}
+
+func TestVideoFilters_CropThenScale(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Crop = "800:800:240:0"
+	cfg.Scale = "640x480"
+	vf, err := videoFilters(cfg, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vf != "crop=800:800:240:0,scale=640:480" {
+		t.Errorf("filter chain = %q", vf)
+	}
+}
+
+func TestVideoFilters_ResolutionScalesOnlyWhenEnabled(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Resolution = "1280x720"
+	// dshow/v4l2 pin the input, so resolution must NOT scale on output:
+	if vf, _ := videoFilters(cfg, false); vf != "" {
+		t.Errorf("resolution should not add an output scale here, got %q", vf)
+	}
+	// avfoundation/network can't pin input, so resolution becomes the scale:
+	if vf, _ := videoFilters(cfg, true); vf != "scale=1280:720" {
+		t.Errorf("resolution should scale on output, got %q", vf)
+	}
+	// An explicit Scale always wins:
+	cfg.Scale = "640x-1"
+	if vf, _ := videoFilters(cfg, true); vf != "scale=640:-1" {
+		t.Errorf("explicit scale should win, got %q", vf)
+	}
+}
+
 func TestUSBInputVariants_ExplicitPixelFormatSingleTry(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.PixelFormat = "yuyv422"

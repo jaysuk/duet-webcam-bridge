@@ -108,9 +108,12 @@ func planUSB(cfg Config, ffmpegPath string) (capturePlan, error) {
 	}
 
 	prefix := []string{"-hide_banner", "-loglevel", ffLogLevel(cfg), "-nostdin"}
-	// avfoundation needs output-side scaling (we can't reliably pin input size);
-	// dshow/v4l2 select the hardware mode on the input.
-	out := encodeArgs(cfg, inputFmt == "avfoundation")
+	// avfoundation can't pin the input size, so Resolution acts as the output
+	// scale there; dshow/v4l2 select the hardware mode on the input instead.
+	out, err := encodeArgs(cfg, inputFmt == "avfoundation")
+	if err != nil {
+		return capturePlan{}, err
+	}
 
 	inputVariants := usbInputVariants(cfg, inputFmt, dev)
 	var cands [][]string
@@ -223,7 +226,10 @@ func planNetwork(cfg Config, ffmpegPath string) (capturePlan, error) {
 	args = append(args, "-i", fullURL)
 	logArgs = append(logArgs, "-i", redactedURL)
 
-	enc := encodeArgs(cfg, true)
+	enc, err := encodeArgs(cfg, true)
+	if err != nil {
+		return capturePlan{}, err
+	}
 	args = append(args, enc...)
 	logArgs = append(logArgs, enc...)
 
@@ -247,7 +253,13 @@ func planCSI(cfg Config, rpicamPath string) (capturePlan, error) {
 	if cfg.Framerate > 0 {
 		args = append(args, "--framerate", strconv.Itoa(cfg.Framerate))
 	}
-	if w, h, ok := splitResolution(cfg.Resolution); ok {
+	// rpicam sizes the output itself; prefer an explicit Scale, else Resolution.
+	// (Arbitrary crop isn't wired up for CSI - rpicam uses a normalised --roi.)
+	dims := cfg.Scale
+	if dims == "" {
+		dims = cfg.Resolution
+	}
+	if w, h, ok := splitResolution(dims); ok {
 		args = append(args, "--width", strconv.Itoa(w), "--height", strconv.Itoa(h))
 	}
 	return capturePlan{
@@ -259,8 +271,31 @@ func planCSI(cfg Config, rpicamPath string) (capturePlan, error) {
 	}, nil
 }
 
+// videoFilters builds the ffmpeg -vf chain: crop first (cut a region from the
+// captured frame), then scale (resize what DWC receives). If no explicit Scale
+// is set, Resolution is used as the scale target when scaleViaResolution is true
+// (avfoundation/network, where the input size can't be pinned).
+func videoFilters(cfg Config, scaleViaResolution bool) (string, error) {
+	var parts []string
+	if c, err := normalizeCrop(cfg.Crop); err != nil {
+		return "", err
+	} else if c != "" {
+		parts = append(parts, "crop="+c)
+	}
+	scaleSpec := cfg.Scale
+	if scaleSpec == "" && scaleViaResolution {
+		scaleSpec = cfg.Resolution
+	}
+	if s, err := normalizeScale(scaleSpec); err != nil {
+		return "", err
+	} else if s != "" {
+		parts = append(parts, "scale="+s)
+	}
+	return strings.Join(parts, ","), nil
+}
+
 // encodeArgs builds the shared ffmpeg output args (MJPEG over mpjpeg on stdout).
-func encodeArgs(cfg Config, scaleOutput bool) []string {
+func encodeArgs(cfg Config, scaleViaResolution bool) ([]string, error) {
 	args := []string{"-an", "-c:v", "mjpeg", "-pix_fmt", "yuvj420p"}
 	if cfg.Quality > 0 {
 		args = append(args, "-q:v", strconv.Itoa(cfg.Quality))
@@ -268,13 +303,15 @@ func encodeArgs(cfg Config, scaleOutput bool) []string {
 	if cfg.Framerate > 0 {
 		args = append(args, "-r", strconv.Itoa(cfg.Framerate))
 	}
-	if scaleOutput {
-		if w, h, ok := splitResolution(cfg.Resolution); ok {
-			args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", w, h))
-		}
+	vf, err := videoFilters(cfg, scaleViaResolution)
+	if err != nil {
+		return nil, err
+	}
+	if vf != "" {
+		args = append(args, "-vf", vf)
 	}
 	args = append(args, "-f", "mpjpeg", "pipe:1")
-	return args
+	return args, nil
 }
 
 // Run keeps the capture source alive until ctx is cancelled, restarting on

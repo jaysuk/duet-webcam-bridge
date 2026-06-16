@@ -232,6 +232,8 @@ func parseConfigForm(r *http.Request, current Config) Config {
 	c.Source = strings.TrimSpace(formOr(r, "source", c.Source))
 	c.Device = strings.TrimSpace(r.FormValue("device"))
 	c.Resolution = strings.TrimSpace(r.FormValue("resolution"))
+	c.Crop = strings.TrimSpace(r.FormValue("crop"))
+	c.Scale = strings.TrimSpace(r.FormValue("scale"))
 	c.Framerate = atoiOr(r.FormValue("framerate"), c.Framerate)
 	c.Quality = atoiOr(r.FormValue("quality"), c.Quality)
 	c.PixelFormat = strings.TrimSpace(r.FormValue("pixelFormat"))
@@ -369,9 +371,15 @@ var configTmpl = template.Must(template.New("config").Parse(`<!doctype html>
 
   <h2>Picture</h2>
   <div class="row">
-    <div><label>Resolution <span class="hint">e.g. 1280x720; blank = native</span>
+    <div><label>Capture resolution <span class="hint">e.g. 1280x720; blank = native</span>
       <input name="resolution" value="{{.Cfg.Resolution}}"></label></div>
     <div><label>Framerate<input name="framerate" value="{{.Cfg.Framerate}}"></label></div>
+  </div>
+  <div class="row">
+    <div><label>Crop <span class="hint">w:h or w:h:x:y (pixels); blank = none</span>
+      <input name="crop" value="{{.Cfg.Crop}}" placeholder="e.g. 800:800:240:0"></label></div>
+    <div><label>Scale (output) <span class="hint">WxH, use -1 to keep aspect</span>
+      <input name="scale" value="{{.Cfg.Scale}}" placeholder="e.g. 640x-1"></label></div>
   </div>
   <div class="row">
     <div><label>Quality <span class="hint">2 best .. 31 worst</span>

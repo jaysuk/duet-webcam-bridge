@@ -51,10 +51,18 @@ type Config struct {
 	SnapshotInterval int `json:"snapshotInterval"`
 
 	// --- common capture options ---
-	// Resolution like "1280x720". Empty = native. For usb on Windows/Linux this
-	// selects the camera's hardware mode; on macOS and for network/csi it scales
-	// the output (so any value is safe).
+	// Resolution like "1280x720". Empty = native. This is the *capture* size: for
+	// usb on Windows/Linux it selects the camera's hardware mode; on macOS and
+	// for network it's the baseline the output is scaled from when Scale is unset.
 	Resolution string `json:"resolution"`
+	// Crop cuts a region out of the captured image before scaling. ffmpeg crop
+	// syntax: "w:h" (centred) or "w:h:x:y" (x,y = top-left offset), in pixels.
+	// Empty = no crop. (Not supported for csi.)
+	Crop string `json:"crop"`
+	// Scale resizes the (optionally cropped) image that DWC receives, e.g.
+	// "640x480" or "1280x720". Use -1 for one axis to keep the aspect ratio,
+	// e.g. "640x-1". Empty = no explicit scaling.
+	Scale string `json:"scale"`
 	// Framerate to emit. 0 = source default.
 	Framerate int `json:"framerate"`
 	// Quality is ffmpeg's -q:v (2 = best/large ... 31 = worst/small).
@@ -135,6 +143,8 @@ func loadConfig(args []string) (Config, *flags, error) {
 	fs.StringVar(&cfg.Password, "password", cfg.Password, "network camera password")
 	fs.StringVar(&cfg.NetworkMode, "network-mode", cfg.NetworkMode, "network camera mode: stream | snapshot")
 	fs.StringVar(&cfg.Resolution, "resolution", cfg.Resolution, "capture resolution e.g. 1280x720")
+	fs.StringVar(&cfg.Crop, "crop", cfg.Crop, "crop region w:h or w:h:x:y (pixels)")
+	fs.StringVar(&cfg.Scale, "scale", cfg.Scale, "output size WxH (use -1 to keep aspect, e.g. 640x-1)")
 	fs.IntVar(&cfg.Framerate, "framerate", cfg.Framerate, "frames per second")
 	fs.IntVar(&cfg.Quality, "quality", cfg.Quality, "JPEG quality, ffmpeg -q:v (2 best .. 31 worst)")
 	fs.StringVar(&cfg.PixelFormat, "pixel-format", cfg.PixelFormat, "input pixel format override")
@@ -178,6 +188,12 @@ func validateConfig(cfg Config) error {
 		if _, _, ok := splitResolution(cfg.Resolution); !ok {
 			return fmt.Errorf("resolution must look like 1280x720")
 		}
+	}
+	if _, err := normalizeCrop(cfg.Crop); err != nil {
+		return err
+	}
+	if _, err := normalizeScale(cfg.Scale); err != nil {
+		return err
 	}
 	if cfg.Framerate < 0 || cfg.Framerate > 240 {
 		return fmt.Errorf("framerate must be between 0 and 240")

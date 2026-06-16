@@ -121,7 +121,9 @@ Anything here can also be passed as a flag (e.g. `--port 8082`); flags win.
 | --- | --- | --- |
 | `source` | `usb`, `network` or `csi`. | `usb` |
 | `device` | Which camera (usb name/index, or csi index). Empty = first. | `""` |
-| `resolution` | e.g. `"1280x720"`. Empty = native. | `""` |
+| `resolution` | **Capture** size, e.g. `"1280x720"`. Empty = native. | `""` |
+| `crop` | Cut a region: `"w:h"` (centred) or `"w:h:x:y"`, in pixels. | `""` |
+| `scale` | **Output** size sent to DWC, `"WxH"`. Use `-1` on one axis to keep aspect (`"640x-1"`). | `""` |
 | `framerate` | Frames per second. | `15` |
 | `quality` | ffmpeg `-q:v`: `2` best/larger … `31` worst/smaller. | `5` |
 | `port` / `bind` | Port and interface (`0.0.0.0` = all). | `8081` / `0.0.0.0` |
@@ -131,6 +133,13 @@ Anything here can also be passed as a flag (e.g. `--port 8082`); flags win.
 | `networkMode` | `stream` (transcode) or `snapshot` (poll a JPEG URL). | `stream` |
 | `snapshotInterval` | Poll period (ms) for `snapshot` mode. | `1000` |
 | `pixelFormat` | Advanced input pixel-format override. | `""` |
+
+**Cropping & scaling.** `crop` cuts a region out of the captured image and `scale`
+resizes what DWC receives (crop happens first). For example, to show just the
+print bed: capture at full res and crop to it, then shrink for the dashboard —
+`"resolution": "1920x1080", "crop": "1000:1000:460:40", "scale": "640x-1"`. Leave
+both blank to send the camera image as-is. (`crop` isn't available for Pi CSI
+cameras; use `scale`/`resolution` there.)
 
 ## Start automatically at boot / login
 
