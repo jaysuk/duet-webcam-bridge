@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // runAutostart installs (or removes) an OS-native mechanism that launches the
@@ -77,7 +78,14 @@ func autostartWindows(install bool, exe string) error {
 }
 
 func windowsLauncher(exe string) string {
-	return fmt.Sprintf("@echo off\r\ncd /d \"%s\"\r\nstart \"\" /min \"%s\"\r\n", filepath.Dir(exe), exe)
+	// Derive the directory with Windows separators explicitly rather than
+	// filepath.Dir, so this is correct (and unit-testable) regardless of the
+	// host OS the code is compiled/tested on.
+	dir := exe
+	if i := strings.LastIndexAny(exe, `\/`); i >= 0 {
+		dir = exe[:i]
+	}
+	return fmt.Sprintf("@echo off\r\ncd /d \"%s\"\r\nstart \"\" /min \"%s\"\r\n", dir, exe)
 }
 
 // --- macOS ---
