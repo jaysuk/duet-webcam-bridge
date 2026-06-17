@@ -8,7 +8,8 @@
 #
 # These are well-known, stable static-build sources (no apt/install needed):
 #   - Windows: gyan.dev
-#   - Linux:   johnvansickle.com (covers Raspberry Pi arm64 + armhf)
+#   - Linux:   BtbN/FFmpeg-Builds on GitHub (amd64 + arm64; reliable from CI).
+#              armhf still uses johnvansickle.com (not pre-built in the release matrix).
 #   - macOS:   evermeet.cx (x86_64; runs on Apple Silicon via Rosetta)
 set -euo pipefail
 
@@ -24,10 +25,11 @@ case "$target" in
     url="https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
     archive="$tmp/ff.zip"; binname="ffmpeg.exe" ;;
   linux-amd64)
-    url="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+    # BtbN's GitHub-hosted static builds (johnvansickle.com intermittently 415s GitHub runners).
+    url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
     archive="$tmp/ff.tar.xz"; binname="ffmpeg" ;;
   linux-arm64)
-    url="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz"
+    url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
     archive="$tmp/ff.tar.xz"; binname="ffmpeg" ;;
   linux-armhf)
     url="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-armhf-static.tar.xz"
