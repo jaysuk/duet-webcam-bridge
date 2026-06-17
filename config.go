@@ -22,6 +22,14 @@ type Config struct {
 	// Port to serve on. 8081 matches the Duet SBC webcam default.
 	Port int `json:"port"`
 
+	// AllowOrigin sets the Access-Control-Allow-Origin header on the camera and
+	// asset endpoints. Plain <img> display works cross-origin without it, but a
+	// browser plugin that reads pixels off a <canvas> (e.g. the tool-alignment
+	// CV) needs it, otherwise the canvas is "tainted" and getImageData throws.
+	// Default "*" (any origin); set a specific origin like "http://duet.local"
+	// to lock it down, or "" to disable the header entirely.
+	AllowOrigin string `json:"allowOrigin"`
+
 	// Source selects where the video comes from:
 	//   "usb"     a USB / built-in camera on this machine (default)
 	//   "csi"     a Raspberry Pi CSI ribbon-cable camera (via rpicam-vid)
@@ -84,12 +92,21 @@ type Config struct {
 	// to see the full device negotiation when diagnosing a camera that won't
 	// start.
 	LogLevel string `json:"logLevel"`
+
+	// OpenCVDir is the directory whose contents are served under /opencv/ — used
+	// to host the OpenCV.js runtime (opencv.js + opencv_js.wasm) for the browser
+	// tool-alignment plugin, so the CV engine loads from this bridge instead of a
+	// CDN or the Duet's SD card. Empty = "opencv" next to the executable. The
+	// route simply 404s when the directory is absent, so it's a no-op (and
+	// effectively opt-out) unless you ship the assets alongside the binary.
+	OpenCVDir string `json:"openCVDir"`
 }
 
 func defaultConfig() Config {
 	return Config{
 		Bind:             "0.0.0.0",
 		Port:             8081,
+		AllowOrigin:      "*",
 		Source:           "usb",
 		RTSPTransport:    "tcp",
 		NetworkMode:      "stream",
@@ -136,6 +153,7 @@ func loadConfig(args []string) (Config, *flags, error) {
 	f := &flags{}
 	fs.StringVar(&cfg.Bind, "bind", cfg.Bind, "interface to listen on (0.0.0.0 = all)")
 	fs.IntVar(&cfg.Port, "port", cfg.Port, "port to serve on")
+	fs.StringVar(&cfg.AllowOrigin, "allow-origin", cfg.AllowOrigin, "Access-Control-Allow-Origin for camera/asset endpoints (* = any, empty = off)")
 	fs.StringVar(&cfg.Source, "source", cfg.Source, "video source: usb | csi | network")
 	fs.StringVar(&cfg.Device, "device", cfg.Device, "camera device (empty = auto; see --list)")
 	fs.StringVar(&cfg.URL, "url", cfg.URL, "network camera URL (rtsp/http)")
@@ -150,6 +168,7 @@ func loadConfig(args []string) (Config, *flags, error) {
 	fs.StringVar(&cfg.PixelFormat, "pixel-format", cfg.PixelFormat, "input pixel format override")
 	fs.StringVar(&cfg.InputFormat, "input-format", cfg.InputFormat, "override ffmpeg input format")
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "ffmpeg -loglevel (e.g. verbose) for diagnostics")
+	fs.StringVar(&cfg.OpenCVDir, "opencv-dir", cfg.OpenCVDir, "directory served at /opencv/ (empty = ./opencv next to the exe)")
 	fs.StringVar(&cfg.FFmpegPath, "ffmpeg", cfg.FFmpegPath, "path to ffmpeg (empty = bundled/PATH)")
 	fs.BoolVar(&f.list, "list", false, "list available cameras and exit")
 	fs.BoolVar(&f.version, "version", false, "print version and exit")

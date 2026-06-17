@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -27,8 +28,57 @@ func (a *App) handler() http.Handler {
 	mux.HandleFunc("/stream", a.handleStream)
 	mux.HandleFunc("/health", a.handleHealth)
 	mux.HandleFunc("/config", a.handleConfig)
+	mux.HandleFunc("/opencv/", a.handleOpenCV)
 	mux.HandleFunc("/", a.handleRoot)
 	return mux
+}
+
+// handleOpenCV serves the OpenCV.js runtime (and any sibling assets) from the
+// configured directory under /opencv/. CORS is applied so the browser plugin
+// can fetch the wasm cross-origin; missing files/dir simply 404. Read-only:
+// only GET/HEAD (plus the OPTIONS preflight handled by setCORS).
+func (a *App) handleOpenCV(w http.ResponseWriter, r *http.Request) {
+	if a.setCORS(w, r) {
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	dir := a.config().OpenCVDir
+	if dir == "" {
+		dir = filepath.Join(exeDir(), "opencv")
+	}
+	fs := http.StripPrefix("/opencv/", http.FileServer(http.Dir(dir)))
+	fs.ServeHTTP(w, r)
+}
+
+// setCORS applies the configured Access-Control-Allow-Origin to a response and,
+// for an OPTIONS preflight, writes the allowed methods/headers and reports
+// whether the request was a preflight that the caller should stop handling.
+// A plain cross-origin <img>/fetch GET is a "simple" request that needs only
+// the ACAO header on the response; we still answer OPTIONS so non-simple
+// callers behave. No header is emitted when AllowOrigin is empty.
+func (a *App) setCORS(w http.ResponseWriter, r *http.Request) (preflight bool) {
+	origin := a.config().AllowOrigin
+	if origin == "" {
+		return r.Method == http.MethodOptions
+	}
+	h := w.Header()
+	h.Set("Access-Control-Allow-Origin", origin)
+	if origin != "*" {
+		// The response varies by request Origin once it's not a wildcard, so caches
+		// must key on it.
+		h.Add("Vary", "Origin")
+	}
+	if r.Method == http.MethodOptions {
+		h.Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+		h.Set("Access-Control-Allow-Headers", "*")
+		h.Set("Access-Control-Max-Age", "86400")
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	}
+	return false
 }
 
 // handleRoot serves the help page, but also honours the mjpg-streamer
@@ -50,6 +100,9 @@ func (a *App) handleRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleSnapshot(w http.ResponseWriter, r *http.Request) {
+	if a.setCORS(w, r) {
+		return
+	}
 	cam := a.currentCam()
 	if cam == nil {
 		http.Error(w, "camera not running - see /config", http.StatusServiceUnavailable)
@@ -68,6 +121,9 @@ func (a *App) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleStream(w http.ResponseWriter, r *http.Request) {
+	if a.setCORS(w, r) {
+		return
+	}
 	cam := a.currentCam()
 	if cam == nil {
 		http.Error(w, "camera not running - see /config", http.StatusServiceUnavailable)
@@ -122,6 +178,9 @@ func writePart(w http.ResponseWriter, boundary string, frame []byte) error {
 }
 
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if a.setCORS(w, r) {
+		return
+	}
 	cfg := a.config()
 	haveFrame, lastErr := false, "camera not running"
 	var recent []string

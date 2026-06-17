@@ -3,9 +3,58 @@ package main
 import (
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCORSHeaders(t *testing.T) {
+	app := NewApp(defaultConfig(), "", "") // default AllowOrigin "*"
+
+	// A simple GET to /health (camera nil) still carries the ACAO header so the
+	// browser plugin can read the response cross-origin.
+	req := httptest.NewRequest("GET", "/health", nil)
+	rec := httptest.NewRecorder()
+	app.handler().ServeHTTP(rec, req)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf("expected Access-Control-Allow-Origin *, got %q", got)
+	}
+
+	// An OPTIONS preflight is answered with 204 and the allowed methods.
+	pre := httptest.NewRequest("OPTIONS", "/snapshot", nil)
+	preRec := httptest.NewRecorder()
+	app.handler().ServeHTTP(preRec, pre)
+	if preRec.Code != 204 {
+		t.Errorf("expected 204 for OPTIONS preflight, got %d", preRec.Code)
+	}
+	if !strings.Contains(preRec.Header().Get("Access-Control-Allow-Methods"), "GET") {
+		t.Errorf("preflight should allow GET, got %q", preRec.Header().Get("Access-Control-Allow-Methods"))
+	}
+
+	// With AllowOrigin disabled no header is emitted.
+	cfg := defaultConfig()
+	cfg.AllowOrigin = ""
+	off := NewApp(cfg, "", "")
+	offRec := httptest.NewRecorder()
+	off.handler().ServeHTTP(offRec, httptest.NewRequest("GET", "/health", nil))
+	if got := offRec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("expected no ACAO header when disabled, got %q", got)
+	}
+}
+
+func TestOpenCVRouteMissingDir404(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.OpenCVDir = filepath.Join(t.TempDir(), "does-not-exist")
+	app := NewApp(cfg, "", "")
+	rec := httptest.NewRecorder()
+	app.handler().ServeHTTP(rec, httptest.NewRequest("GET", "/opencv/opencv.js", nil))
+	if rec.Code != 404 {
+		t.Errorf("expected 404 for missing OpenCV asset, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf("OpenCV route should still set CORS, got %q", got)
+	}
+}
 
 func TestValidateConfig(t *testing.T) {
 	base := defaultConfig()

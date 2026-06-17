@@ -163,7 +163,21 @@ work too:
 | `/stream` or `/?action=stream` | live MJPEG stream |
 | `/snapshot` or `/?action=snapshot` | single JPEG |
 | `/health` | JSON status (handy for debugging) |
+| `/opencv/…` | OpenCV.js runtime, when the assets are present (see below) |
 | `/` | help page with a live preview |
+
+### Browser CV support (CORS + OpenCV.js)
+
+The camera/asset endpoints send an `Access-Control-Allow-Origin` header (default `*`, set with
+`--allow-origin` or `allowOrigin` in config.json, `""` to disable). Plain `<img>` display never needed
+this, but a browser plugin that reads camera pixels off a `<canvas>` — such as the automated
+tool-alignment plugin — does, otherwise the canvas is "tainted" and `getImageData` throws.
+
+If the OpenCV.js runtime (`opencv.js` [+ `opencv_js.wasm`]) is present in an `opencv/` directory next
+to the executable (override with `--opencv-dir`), it's served at `/opencv/` so that plugin can load
+the CV engine from this bridge instead of a CDN or the Duet's SD card. Release archives bundle it via
+`scripts/fetch-opencv.sh`; the route simply 404s when the assets are absent (camera streaming is
+unaffected).
 
 ## Building from source
 
