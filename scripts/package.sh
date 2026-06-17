@@ -34,7 +34,7 @@ echo "== Fetching ffmpeg =="
 echo "== Fetching OpenCV.js (for the tool-alignment plugin, served at /opencv/) =="
 # Best-effort: a failed CV fetch shouldn't sink a webcam-bridge release — the /opencv route just
 # 404s without these files and camera streaming is unaffected.
-"$root/scripts/fetch-opencv.sh" "$stage" || echo "warning: OpenCV.js fetch failed; release will ship without /opencv assets"
+bash "$root/scripts/fetch-opencv.sh" "$stage" || echo "warning: OpenCV.js fetch failed; release will ship without /opencv assets"
 
 echo "== Adding launchers + docs =="
 cp "$root/config.example.json" "$stage/config.json"
