@@ -18,6 +18,12 @@ on:
 permissions:
   contents: write # create the Release and upload assets
 
+env:
+  # The Conventional-Commit changelog generator is shared across the Duet plugin family and lives in
+  # the runtime repo (single source of truth). Pinned to a ref; bump this one line to adopt changelog
+  # format changes. Source: jaysuk/dwc-plugin-runtime → scripts/changelog.mjs.
+  RUNTIME_REF: d077f81a11bb5af9a35fe39f7b82d789eab19896
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -64,31 +70,60 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref_type == 'tag'
     steps:
+      # Check out (with full history + tags) so the shared changelog generator can diff against the
+      # previous tag. The build job builds the binaries; this job only needs the git history + Node.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+
       - name: Download all archives
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
+      # Fetch the shared changelog generator from the runtime repo (single source of truth, pinned ref).
+      - name: Fetch shared release-notes generator
+        run: curl -fsSL "https://raw.githubusercontent.com/jaysuk/dwc-plugin-runtime/${RUNTIME_REF}/scripts/changelog.mjs" -o "$RUNNER_TEMP/changelog.mjs"
+
+      # Body = shared Conventional-Commit changelog (Features / Bug Fixes / …) followed by this
+      # project's static "which file do I download" footer.
+      - name: Generate release notes
+        id: changelog
+        run: |
+          {
+            echo 'body<<__CHANGELOG_EOF__'
+            node "$RUNNER_TEMP/changelog.mjs"
+            cat <<'__FOOTER__'
+
+          ---
+
+          Cross-platform USB-camera-to-DWC bridge. **ffmpeg is bundled** - nothing to install.
+
+          ### Which file do I download?
+          | Your computer | File |
+          | --- | --- |
+          | Windows PC | `*-windows-amd64.zip` |
+          | Mac (Intel or Apple Silicon) | `*-macos-amd64.tar.gz` |
+          | Linux PC | `*-linux-amd64.tar.gz` |
+          | Raspberry Pi (64-bit OS) | `*-linux-arm64.tar.gz` |
+
+          Unzip, run the launcher inside, then paste the printed `/stream` URL into
+          **DWC -> Settings -> Webcam** (set the update interval to 0 for live video).
+          See the bundled `QUICKSTART.txt` or the [README](https://github.com/jaysuk/duet-webcam-bridge#readme).
+          __FOOTER__
+            echo '__CHANGELOG_EOF__'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           draft: false
-          generate_release_notes: true
-          body: |
-            Cross-platform USB-camera-to-DWC bridge. **ffmpeg is bundled** - nothing to install.
-
-            ### Which file do I download?
-            | Your computer | File |
-            | --- | --- |
-            | Windows PC | `*-windows-amd64.zip` |
-            | Mac (Intel or Apple Silicon) | `*-macos-amd64.tar.gz` |
-            | Linux PC | `*-linux-amd64.tar.gz` |
-            | Raspberry Pi (64-bit OS) | `*-linux-arm64.tar.gz` |
-
-            Unzip, run the launcher inside, then paste the printed `/stream` URL into
-            **DWC -> Settings -> Webcam** (set the update interval to 0 for live video).
-            See the bundled `QUICKSTART.txt` or the [README](https://github.com/jaysuk/duet-webcam-bridge#readme).
+          body: ${{ steps.changelog.outputs.body }}
           files: |
             artifacts/*.zip
             artifacts/*.tar.gz
