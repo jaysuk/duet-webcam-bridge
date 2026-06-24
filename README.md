@@ -153,6 +153,15 @@ logon on Windows, a **systemd** service on Linux/Pi (`sudo` for a system-wide on
 otherwise a per-user one), or a **launchd LaunchAgent** on macOS. On macOS you
 must run it once interactively first so it can be granted Camera permission.
 
+## Update notifications
+
+On startup (and once a day) the bridge checks GitHub for a newer release and, if one is found, flags
+it on the **Settings** page (with a download link for your platform) and in `/health`
+(`"update": { "available": true, "latest": "…", "url": "…", "assetUrl": "…" }`). Nothing is
+downloaded or replaced automatically — to update, download the linked archive and unzip it over your
+current install. The check is on by default; turn it off with the **"Check GitHub for new versions"**
+box on the Settings page or `--check-updates=false`. Local `dev` builds never check.
+
 ### URLs
 
 The endpoints are deliberately mjpg-streamer-compatible, so existing Duet guides

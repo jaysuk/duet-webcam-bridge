@@ -27,6 +27,8 @@ type App struct {
 	camCancel context.CancelFunc
 	srv       *http.Server
 
+	upd updater // latest GitHub release-check result
+
 	parentCtx context.Context
 	rebind    chan struct{}
 }
@@ -138,6 +140,8 @@ func (a *App) Run(ctx context.Context) {
 		log.Printf("the bridge is still running - open /config in a browser to fix the settings")
 	}
 
+	go a.runUpdateChecks(ctx)
+
 	first := true
 	for {
 		addr := net.JoinHostPort(a.config().Bind, strconv.Itoa(a.config().Port))
@@ -190,6 +194,35 @@ func (a *App) shutdown(srv *http.Server) {
 	sd, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(sd)
+}
+
+// runUpdateChecks polls GitHub for a newer release on startup (after a short delay) and then daily,
+// storing the result for /config and /health to surface. Stdlib-only and best-effort: failures are
+// recorded in the status, never fatal. "dev" builds never check.
+func (a *App) runUpdateChecks(ctx context.Context) {
+	if version == "dev" {
+		return
+	}
+	if sleepCtx(ctx, 5*time.Second) {
+		return
+	}
+	for {
+		if a.config().CheckUpdates {
+			s := checkForUpdate(ctx, version)
+			a.upd.set(s)
+			if s.Available {
+				log.Printf("update available: v%s (you have v%s) - %s", s.Latest, s.Current, s.URL)
+			}
+		}
+		if sleepCtx(ctx, updateInterval) {
+			return
+		}
+	}
+}
+
+// updateStatus returns the latest release-check result (zero value before the first check).
+func (a *App) updateStatus() UpdateStatus {
+	return a.upd.get()
 }
 
 // sleepCtx waits for d or ctx cancellation; returns true if ctx was cancelled.

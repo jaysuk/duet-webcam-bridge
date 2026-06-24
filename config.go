@@ -100,6 +100,12 @@ type Config struct {
 	// route simply 404s when the directory is absent, so it's a no-op (and
 	// effectively opt-out) unless you ship the assets alongside the binary.
 	OpenCVDir string `json:"openCVDir"`
+
+	// CheckUpdates enables a daily check of the GitHub Releases API to flag a newer
+	// version on the /config page and in /health. No data leaves the machine beyond
+	// the request to GitHub, and nothing is downloaded or replaced automatically.
+	// Default true; "dev" builds never check.
+	CheckUpdates bool `json:"checkUpdates"`
 }
 
 func defaultConfig() Config {
@@ -107,6 +113,7 @@ func defaultConfig() Config {
 		Bind:             "0.0.0.0",
 		Port:             8081,
 		AllowOrigin:      "*",
+		CheckUpdates:     true,
 		Source:           "usb",
 		RTSPTransport:    "tcp",
 		NetworkMode:      "stream",
@@ -169,6 +176,7 @@ func loadConfig(args []string) (Config, *flags, error) {
 	fs.StringVar(&cfg.InputFormat, "input-format", cfg.InputFormat, "override ffmpeg input format")
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "ffmpeg -loglevel (e.g. verbose) for diagnostics")
 	fs.StringVar(&cfg.OpenCVDir, "opencv-dir", cfg.OpenCVDir, "directory served at /opencv/ (empty = ./opencv next to the exe)")
+	fs.BoolVar(&cfg.CheckUpdates, "check-updates", cfg.CheckUpdates, "check GitHub for new versions daily (--check-updates=false to disable)")
 	fs.StringVar(&cfg.FFmpegPath, "ffmpeg", cfg.FFmpegPath, "path to ffmpeg (empty = bundled/PATH)")
 	fs.BoolVar(&f.list, "list", false, "list available cameras and exit")
 	fs.BoolVar(&f.version, "version", false, "print version and exit")

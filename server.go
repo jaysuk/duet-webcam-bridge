@@ -195,6 +195,7 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"haveFrame": haveFrame,
 		"lastError": lastErr,
 		"log":       recent,
+		"update":    a.updateStatus(),
 	})
 }
 
@@ -305,6 +306,8 @@ func parseConfigForm(r *http.Request, current Config) Config {
 	c.NetworkMode = strings.TrimSpace(formOr(r, "networkMode", c.NetworkMode))
 	c.SnapshotInterval = atoiOr(r.FormValue("snapshotInterval"), c.SnapshotInterval)
 	c.LogLevel = strings.TrimSpace(r.FormValue("logLevel"))
+	// Unchecked checkboxes aren't posted, so absence = off.
+	c.CheckUpdates = r.FormValue("checkUpdates") != ""
 	return c
 }
 
@@ -348,6 +351,7 @@ func (a *App) renderConfig(w http.ResponseWriter, cfg Config, ok, errMsg string)
 		HaveFrame   bool
 		CamErr      string
 		Log         []string
+		Update      UpdateStatus
 	}{
 		Version:     version,
 		Cfg:         cfg,
@@ -357,6 +361,7 @@ func (a *App) renderConfig(w http.ResponseWriter, cfg Config, ok, errMsg string)
 		HaveFrame:   haveFrame,
 		CamErr:      camErr,
 		Log:         recent,
+		Update:      a.updateStatus(),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := configTmpl.Execute(w, data); err != nil {
@@ -381,6 +386,7 @@ var configTmpl = template.Must(template.New("config").Parse(`<!doctype html>
  .ok{background:#e6f4ea;border:1px solid #34a853;padding:.5rem .7rem;border-radius:.3rem;margin:.5rem 0}
  .err{background:#fce8e6;border:1px solid #ea4335;padding:.5rem .7rem;border-radius:.3rem;margin:.5rem 0}
  .diag{background:#fff8e1;border:1px solid #f9ab00;padding:.5rem .7rem;border-radius:.3rem;margin:.5rem 0}
+ .upd{background:#e8f0fe;border:1px solid #1976d2;padding:.5rem .7rem;border-radius:.3rem;margin:.5rem 0}
  pre{background:#111;color:#ddd;padding:.6rem;border-radius:.3rem;overflow:auto;font-size:.78rem;max-height:14rem}
  a{color:#1976d2}
 </style>
@@ -388,6 +394,7 @@ var configTmpl = template.Must(template.New("config").Parse(`<!doctype html>
 <body>
 <h1>Settings <small>v{{.Version}}</small></h1>
 <p><a href="/">&larr; back</a> &middot; <a href="/stream">preview</a></p>
+{{if .Update.Available}}<div class="upd"><strong>Update available:</strong> v{{.Update.Latest}} (you have v{{.Update.Current}}). {{if .Update.AssetURL}}<a href="{{.Update.AssetURL}}">Download for this platform</a> &middot; {{end}}<a href="{{.Update.URL}}">release notes</a>. Unzip over your current install to update.</div>{{end}}
 {{if .OK}}<div class="ok">{{.OK}}</div>{{end}}
 {{if .Err}}<div class="err">{{.Err}}</div>{{end}}
 {{if .HaveFrame}}<div class="ok">Camera is running — frames are flowing.</div>
@@ -463,6 +470,7 @@ var configTmpl = template.Must(template.New("config").Parse(`<!doctype html>
         <option value="verbose"{{if eq .Cfg.LogLevel "verbose"}} selected{{end}}>verbose</option>
       </select></label></div>
   </div>
+  <label style="font-weight:400;margin-top:.6rem"><input type="checkbox" name="checkUpdates" style="width:auto;margin-right:.4rem"{{if .Cfg.CheckUpdates}} checked{{end}}>Check GitHub for new versions daily</label>
 
   <button class="btn" type="submit">Save &amp; apply</button>
 </form>
