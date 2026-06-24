@@ -39,7 +39,7 @@ jobs:
           # pre-built: johnvansickle's armhf static build returns HTTP 415 to
           # GitHub's runners. 64-bit Pi OS users use linux-arm64.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-go@v5
         with:
@@ -57,7 +57,7 @@ jobs:
       - name: Package ${{ matrix.target }}
         run: bash scripts/package.sh "${{ matrix.target }}" "${{ steps.ver.outputs.version }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.target }}
           path: |
@@ -72,16 +72,16 @@ jobs:
     steps:
       # Check out (with full history + tags) so the shared changelog generator can diff against the
       # previous tag. The build job builds the binaries; this job only needs the git history + Node.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 24 }
 
       - name: Download all archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts
           merge-multiple: true
@@ -120,7 +120,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Publish Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: false
           body: ${{ steps.changelog.outputs.body }}
